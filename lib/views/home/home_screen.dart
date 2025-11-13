@@ -1,0 +1,936 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import '../../config/theme.dart';
+import '../../config/routes.dart';
+import '../../models/finca.dart';
+import '../../services/finca_service.dart';
+import '../../services/auth_service.dart';
+import '../../widgets/loading_indicator.dart';
+import '../debug/api_test_screen.dart';
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final FincaService _fincaService = FincaService();
+  final TextEditingController _searchController = TextEditingController();
+  List<Finca> _fincasFiltradas = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarFincas();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _cargarFincas() async {
+    print('🏠 HomeScreen: Iniciando carga de fincas...');
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final fincas = await _fincaService.obtenerFincas();
+      print('🏠 HomeScreen: Fincas recibidas: ${fincas.length}');
+      for (var finca in fincas) {
+        print('  - ${finca.nombre} (ID: ${finca.id})');
+      }
+      setState(() {
+        _fincasFiltradas = fincas;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('❌ HomeScreen: Error al cargar fincas: $e');
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _mostrarBusqueda() {
+    showSearch(context: context, delegate: FincaSearchDelegate(_fincaService));
+  }
+
+  void _mostrarFiltros() {
+    // TODO: Implementar pantalla de filtros
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Filtros próximamente disponibles'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _cerrarSesion() async {
+    // Mostrar diálogo de confirmación
+    final bool? confirmar = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Cerrar Sesión'),
+          content: const Text('¿Estás seguro de que deseas cerrar sesión?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Cerrar Sesión'),
+            ),
+          ],
+        );
+      },
+    );
+
+    // Si el usuario confirmó, cerrar sesión
+    if (confirmar == true && mounted) {
+      try {
+        // Limpiar el token de AuthService
+        final authService = AuthService();
+        await authService.logout();
+
+        // Navegar a la pantalla de login y limpiar el historial
+        if (mounted) {
+          context.go(AppRoutes.login);
+
+          // Mostrar mensaje de confirmación
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Sesión cerrada exitosamente'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error al cerrar sesión: $e'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background, // Fondo blanco puro
+      appBar: AppBar(
+        title: const Text(
+          'FincaSmart',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: AppColors.textOnPrimary, // Texto blanco
+            fontSize: 20,
+          ),
+        ),
+        centerTitle: true, // Centrar el título
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: AppColors.appBarGradient, // Gradiente verde
+          ),
+        ),
+        backgroundColor: Colors.transparent,
+        foregroundColor: AppColors.textOnPrimary,
+        automaticallyImplyLeading: false,
+        elevation: 0,
+        actions: [
+          IconButton(
+            icon: Icon(Icons.search, color: AppColors.icon),
+            onPressed: _mostrarBusqueda,
+          ),
+          IconButton(
+            icon: Icon(Icons.filter_list, color: AppColors.icon),
+            onPressed: _mostrarFiltros,
+          ),
+          PopupMenuButton<String>(
+            icon: Icon(Icons.more_vert, color: AppColors.icon),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            color: Colors.white,
+            elevation: 8,
+            onSelected: (value) {
+              switch (value) {
+                case 'mis_fincas':
+                  context.push(AppRoutes.myFincas);
+                  break;
+                case 'mis_reservas':
+                  context.push(AppRoutes.myReservas);
+                  break;
+                case 'logout':
+                  _cerrarSesion();
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'mis_fincas',
+                child: Row(
+                  children: [
+                    Icon(Icons.home_work_outlined, color: AppColors.primary),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Mis Fincas',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'mis_reservas',
+                child: Row(
+                  children: [
+                    Icon(Icons.event_note_outlined, color: AppColors.primary),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Mis Reservas',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout_outlined, color: Colors.redAccent),
+                    SizedBox(width: 12),
+                    Text(
+                      'Cerrar Sesión',
+                      style: TextStyle(
+                        color: Colors.redAccent,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      body: _buildBody(),
+      floatingActionButton: Stack(
+        children: [
+          // Botón principal: Agregar Finca
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: FloatingActionButton.extended(
+              heroTag: 'addFincaButton', // Tag único para evitar conflictos
+              onPressed: () {
+                context.push(AppRoutes.addFinca);
+              },
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add_home_outlined),
+              label: const Text(
+                'Agregar Finca',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+          // Botón temporal: Test API
+          Positioned(
+            bottom: 70,
+            right: 0,
+            child: FloatingActionButton(
+              heroTag: 'apiTestButton', // Tag único para evitar conflictos
+              mini: true,
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const ApiTestScreen(),
+                  ),
+                );
+              },
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              child: const Icon(Icons.api),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: LoadingIndicator());
+    }
+
+    if (_error != null) {
+      return _buildErrorWidget();
+    }
+
+    return RefreshIndicator(
+      onRefresh: _cargarFincas,
+      child: _buildListaFincas(),
+    );
+  }
+
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: AppColors.error),
+            const SizedBox(height: 16),
+            Text(
+              'Error al cargar las fincas',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _error ?? 'Error desconocido',
+              style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: _cargarFincas,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Reintentar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildListaFincas() {
+    if (_fincasFiltradas.isEmpty) {
+      return _buildEmptyState();
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _fincasFiltradas.length,
+      itemBuilder: (context, index) {
+        final finca = _fincasFiltradas[index];
+        return _buildFincaCard(finca);
+      },
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(60),
+              ),
+              child: Icon(
+                Icons.home_work_outlined,
+                size: 64,
+                color: AppColors.primary,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'No hay fincas disponibles',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Sé el primero en agregar una finca',
+              style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 32),
+            ElevatedButton.icon(
+              onPressed: () {
+                context.push(AppRoutes.addFinca);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+              ),
+              icon: const Icon(Icons.add),
+              label: const Text(
+                'Agregar mi primera finca',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFincaCard(Finca finca) {
+    return GestureDetector(
+      onTap: () {
+        GoRouter.of(context).push('/finca-detail', extra: finca);
+      },
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 20),
+        elevation: 4,
+        shadowColor: AppColors.primary.withOpacity(0.2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: AppColors.primary.withOpacity(0.1),
+              width: 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Imagen de la finca
+              Stack(
+                children: [
+                  Container(
+                    height: 220,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(16),
+                      ),
+                      color: AppColors.primary.withOpacity(0.1),
+                    ),
+                    child: (finca.imagenes?.isNotEmpty ?? false)
+                        ? ClipRRect(
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(16),
+                            ),
+                            child: _buildFincaImage(
+                              finca.imagenes!.first.urlImagen,
+                            ),
+                          )
+                        : Container(
+                            decoration: BoxDecoration(
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(16),
+                              ),
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  AppColors.primary.withOpacity(0.15),
+                                  AppColors.primary.withOpacity(0.05),
+                                ],
+                              ),
+                            ),
+                            child: Center(
+                              child: Icon(
+                                Icons.home_work_outlined,
+                                size: 80,
+                                color: AppColors.primary.withOpacity(0.6),
+                              ),
+                            ),
+                          ),
+                  ),
+                  // Badge de precio destacado
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [AppColors.primary, Color(0xFF2E7D32)],
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.attach_money,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                          Text(
+                            '${finca.precioPorNoche.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              // Información de la finca
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      finca.nombre,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.location_on_outlined,
+                          size: 16,
+                          color: AppColors.textSecondary,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            finca.ubicacion,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      finca.descripcion,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textSecondary,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _buildInfoChip(
+                          Icons.people_outline,
+                          'N/A personas', // TODO: ${finca.capacidadMaxima} cuando backend lo soporte
+                        ),
+                        const SizedBox(width: 12),
+                        _buildInfoChip(
+                          Icons.bed_outlined,
+                          'N/A hab.', // TODO: ${finca.numeroHabitaciones} cuando backend lo soporte
+                        ),
+                        const SizedBox(width: 12),
+                        _buildInfoChip(
+                          Icons.bathroom_outlined,
+                          'N/A baños', // TODO: ${finca.numeroBanos} cuando backend lo soporte
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFincaImage(String imagePath) {
+    // Para imágenes en formato base64 (fincas creadas por el usuario)
+    if (imagePath.startsWith('data:image/')) {
+      return Image.network(
+        imagePath,
+        width: double.infinity,
+        height: 200,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            width: double.infinity,
+            height: 200,
+            color: AppColors.primary.withOpacity(0.1),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.broken_image_outlined,
+                    size: 48,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Error al cargar imagen',
+                    style: TextStyle(color: AppColors.primary, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    // Para imágenes de ejemplo (URLs de internet)
+    if (imagePath.startsWith('http')) {
+      return Image.network(
+        imagePath,
+        width: double.infinity,
+        height: 200,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Container(
+            width: double.infinity,
+            height: 200,
+            color: AppColors.primary.withOpacity(0.1),
+            child: Center(
+              child: CircularProgressIndicator(
+                color: AppColors.primary,
+                value: loadingProgress.expectedTotalBytes != null
+                    ? loadingProgress.cumulativeBytesLoaded /
+                          loadingProgress.expectedTotalBytes!
+                    : null,
+              ),
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            width: double.infinity,
+            height: 200,
+            color: AppColors.primary.withOpacity(0.1),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.broken_image_outlined,
+                    size: 48,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Error al cargar imagen',
+                    style: TextStyle(color: AppColors.primary, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    // Fallback para otros casos
+    return Container(
+      width: double.infinity,
+      height: 200,
+      color: AppColors.primary.withOpacity(0.1),
+      child: Center(
+        child: Icon(
+          Icons.home_work_outlined,
+          size: 64,
+          color: AppColors.primary,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoChip(IconData icon, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: AppColors.textSecondary),
+        const SizedBox(width: 4),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: AppColors.secondary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Función auxiliar para construir widgets de imagen de finca
+Widget buildFincaImageWidget(String imagePath) {
+  // Para imágenes en formato base64 (fincas creadas por el usuario)
+  if (imagePath.startsWith('data:image/')) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.network(
+        imagePath,
+        width: 60,
+        height: 60,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              color: AppColors.primary.withOpacity(0.1),
+            ),
+            child: Icon(
+              Icons.broken_image_outlined,
+              color: AppColors.primary,
+              size: 24,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // Para imágenes de ejemplo (URLs de internet)
+  if (imagePath.startsWith('http')) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.network(
+        imagePath,
+        width: 60,
+        height: 60,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              color: AppColors.primary.withOpacity(0.1),
+            ),
+            child: CircularProgressIndicator(
+              color: AppColors.primary,
+              strokeWidth: 2,
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              color: AppColors.primary.withOpacity(0.1),
+            ),
+            child: Icon(
+              Icons.broken_image_outlined,
+              color: AppColors.primary,
+              size: 24,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // Para imágenes de assets/predeterminadas
+  return ClipRRect(
+    borderRadius: BorderRadius.circular(8),
+    child: Image.asset(
+      imagePath,
+      width: 60,
+      height: 60,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        return Container(
+          width: 60,
+          height: 60,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            color: AppColors.primary.withOpacity(0.1),
+          ),
+          child: Icon(
+            Icons.home_work_outlined,
+            color: AppColors.primary,
+            size: 24,
+          ),
+        );
+      },
+    ),
+  );
+}
+
+// Delegate para búsqueda de fincas
+class FincaSearchDelegate extends SearchDelegate<Finca?> {
+  final FincaService _fincaService;
+
+  FincaSearchDelegate(this._fincaService);
+
+  @override
+  String get searchFieldLabel => 'Buscar fincas...';
+
+  @override
+  List<Widget> buildActions(BuildContext context) {
+    return [
+      IconButton(
+        icon: const Icon(Icons.clear),
+        onPressed: () {
+          query = '';
+        },
+      ),
+    ];
+  }
+
+  @override
+  Widget buildLeading(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back),
+      onPressed: () {
+        close(context, null);
+      },
+    );
+  }
+
+  @override
+  Widget buildResults(BuildContext context) {
+    if (query.isEmpty) {
+      return const Center(child: Text('Escribe algo para buscar fincas'));
+    }
+
+    return FutureBuilder<List<Finca>>(
+      future: _fincaService.buscarFincas(query),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
+        final fincas = snapshot.data ?? [];
+
+        if (fincas.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.search_off, size: 64, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                const Text(
+                  'No se encontraron fincas',
+                  style: TextStyle(fontSize: 18),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Intenta con otros términos de búsqueda',
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          itemCount: fincas.length,
+          itemBuilder: (context, index) {
+            final finca = fincas[index];
+            return ListTile(
+              leading: (finca.imagenes?.isNotEmpty ?? false)
+                  ? buildFincaImageWidget(finca.imagenes!.first.urlImagen)
+                  : Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        color: AppColors.primary.withOpacity(0.1),
+                      ),
+                      child: Icon(
+                        Icons.home_work_outlined,
+                        color: AppColors.primary,
+                        size: 24,
+                      ),
+                    ),
+              title: Text(finca.nombre),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(finca.ubicacion),
+                  Text(
+                    '\$${finca.precioPorNoche.toStringAsFixed(0)}/noche',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+              onTap: () {
+                // TODO: Navegar a detalles de la finca
+                close(context, finca);
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget buildSuggestions(BuildContext context) {
+    return buildResults(context);
+  }
+}
